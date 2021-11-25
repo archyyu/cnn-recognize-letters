@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script src="statistic/p5.min.js"></script>
+    <script src="statistic/p5.dom.min.js"></script>
+    <script src="statistic/data.js"></script>
+    <script src="statistic/convnet.js"></script>
+    <script src="statistic/script.js"></script>
+    <script>
+
+        let mnist;
+        let cnn_model;
+        let cnn_trainer;
+
+        const PIXELS        = 28;                       // images in data set are tiny
+        const PIXELSSQUARED = PIXELS * PIXELS;
+
+        const ZOOMFACTOR    = 8;
+        const ZOOMPIXELS    = ZOOMFACTOR * PIXELS;
+
+        // 3 rows of
+        // large image + 50 gap + small image
+        // 50 gap between rows
+
+        const canvaswidth = ( PIXELS + ZOOMPIXELS ) + 50;
+        const canvasheight = ( ZOOMPIXELS * 3 ) + 100;
+
+
+        let train_state = true;
+
+
+        function loadData(){
+
+            let lmnist = {};
+            let files = {
+                train_images: 'uploads/emnist-letters-train-images-idx3-ubyte',
+                train_labels: 'uploads/emnist-letters-train-labels-idx1-ubyte',
+                test_images:  'uploads/emnist-letters-test-images-idx3-ubyte',
+                test_labels:  'uploads/emnist-letters-test-labels-idx1-ubyte',
+            };
+            return Promise.all(Object.keys(files).map(async file => {
+                lmnist[file] = await loadFile(files[file])
+            }))
+                .then(() => {
+                    mnist = lmnist;
+                    console.log(mnist);
+                });
+
+        }
+
+        function initCnn(){
+            layer_defs = [],
+            layer_defs.push({
+                type: "input",
+                out_sx: 24,
+                out_sy: 24,
+                out_depth: 1
+            }),
+            layer_defs.push({
+                type: "conv",
+                sx: 5,
+                filters: 8,
+                stride: 1,
+                pad: 2,
+                activation: "relu"
+            }),
+            layer_defs.push({
+                type: "pool",
+                sx: 2,
+                stride: 2
+            }),
+            layer_defs.push({
+                type: "conv",
+                sx: 5,
+                filters: 16,
+                stride: 1,
+                pad: 2,
+                activation: "relu"
+            }),
+            layer_defs.push({
+                type: "pool",
+                sx: 3,
+                stride: 3
+            }),
+            layer_defs.push({
+                type: "softmax",
+                num_classes: 26
+            }),
+            cnn_model = new convnetjs.Net();
+            cnn_model.makeLayers(layer_defs);
+            cnn_trainer = new convnetjs.SGDTrainer(cnn_model, {
+                method: "adadelta",
+                batch_size: 20,
+                l2_decay: .001
+            });
+
+        }
+
+
+
+        // function setup(){
+        //
+        //     createCanvas(canvaswidth,canvasheight);
+        //
+        // }
+
+
+        let letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M','N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U','V', 'W', 'X', 'Y', 'Z'];
+
+
+        let train_index = 0;
+        function train(){
+
+            if(train_index >= mnist.train_labels.length){
+                return ;
+            }
+
+
+            let img   = mnist.train_images[train_index];
+            let label = mnist.train_labels[train_index];
+
+            rotateImage(img);
+
+            let inputs = getInputs ( img );
+
+            let cnninputs = getCnnInputs(inputs);
+
+            cnn_trainer.train(cnninputs,label);
+            // nn.train(inputs,labels);
+
+//          image ( theimage,   ZOOMPIXELS+50,    ZOOMPIXELS+50,    PIXELS,         PIXELS      );      // original
+
+            train_index ++;
+
+            if(train_index % 500 == 0){
+                let theimage = getImage(img);
+                image ( theimage,   0,                0,    PIXELS,     PIXELS  );      // magnified
+                // console.log(labels);
+                console.log(letters[label-1]);
+                // console.log(label);
+            }
+
+            // console.log(label);
+            // console.log(letters[label - 1]);
+
+        }
+
+        function rotateImage(inputs){
+
+            //console.log(inputs);
+
+             for(let i=0;i<PIXELS;i++){
+
+                 for(let j = i;j<PIXELS;j++){
+
+                     let sI = i*PIXELS + j;
+                     let dI = j*PIXELS + i;
+                     let temp = inputs[sI];
+                     inputs[sI] = inputs[dI];
+                     inputs[dI] = temp;
+
+                 }
+             }
+
+             //console.log(inputs);
+        }
+
+        let test_index = 0;
+        function test(){
+
+            if(test_index >= mnist.test_labels.length){
+                return ;
+            }
+
+            let img   = mnist.test_images[test_index];
+            let label = mnist.test_labels[test_index];
+
+            rotateImage(img)
+
+            let inputs = getInputs ( img );
+            let cnnInputs = getCnnInputs(inputs);
+
+            let prediction = cnn_model.forward(cnnInputs).w;
+
+            // let prediction = nn.predict(inputs);
+
+            let max = findMax(prediction);
+
+            let theimage = getImage(img);
+            test_index ++;
+
+            image ( theimage,   PIXELS,      PIXELS,    PIXELS,     PIXELS  );      // magnified
+
+            console.log("actual:"+",label:" + letters[label-1]);
+            console.log("predict:" + ",max:" + letters[max-1]);
+
+            return '';
+
+        }
+
+
+        function setup(){
+            initCnn();
+            loadData();
+            createCanvas(canvaswidth,canvasheight);
+        }
+
+        function draw(){
+
+            if ( typeof mnist == 'undefined' ) return;
+
+            if(train_state){
+
+                for(let i=0;i<10;i++){
+                    train();
+                }
+
+
+                if(train_index % 100 == 0){
+                    //test();
+                }
+
+            }
+
+
+            // console.log(train_index);
+
+
+        }
+
+    </script>
+</head>
+<body>
+</body>
+</html>
